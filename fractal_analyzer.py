@@ -1415,7 +1415,7 @@ class FractalAnalyzer:
                 min_box_size=level_min_box_size)  # ← Use level-specific box size
 
             # Unpack results including box data
-            windows, dims, errs, r2s, optimal_window, optimal_dimension, box_sizes, box_counts, bounding_box = results
+            windows, dims, errs, r2s, optimal_window, optimal_dimension, optimal_interscept, box_sizes, box_counts, bounding_box = results
 
             # Check if analysis failed
             if np.isnan(optimal_dimension):
