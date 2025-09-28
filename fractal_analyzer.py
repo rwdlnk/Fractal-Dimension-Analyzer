@@ -4,7 +4,7 @@ from matplotlib.patches import Rectangle
 from matplotlib.collections import PatchCollection
 from scipy import stats
 import argparse
-from matplotlib.ticker import LogLocator, FuncFormatter
+from matplotlib.ticker import LogLocator, FuncFormatter, LogFormatterMathtext
 import time
 import math
 from collections import defaultdict
@@ -514,7 +514,7 @@ class FractalAnalyzer:
                     slope_first, _, r2_first, _, _ = stats.linregress(
                         log_sizes[:segment_size], log_counts[:segment_size])
                     slope_middle, _, r2_middle, _, _ = stats.linregress(
-                        log_sizes[segment_size:2*segment_size], log_counts[segment_size:2*segment_size])
+                        log_sizes[segment_size:3*segment_size], log_counts[segment_size:3*segment_size])
                     slope_last, _, r2_last, _, _ = stats.linregress(
                         log_sizes[-segment_size:], log_counts[-segment_size:])
 
@@ -636,6 +636,9 @@ class FractalAnalyzer:
             if min_count > 0:
                 box_sizes.append(current_box_size)
                 box_counts.append(min_count)
+            #if max_count > 0:
+            #    box_sizes.append(current_box_size)
+            #    box_counts.append(max_count)
             else:
                 print(f"  Warning: No boxes occupied at box size {current_box_size}. Skipping this size.")
 
@@ -1824,11 +1827,38 @@ class FractalAnalyzer:
                 return r'$3{\times}10^{%d}$' % exponent
             else:
                 return r'${%.1f}{\times}10^{%d}$' % (coef, exponent)
+        
+        # Set axis properties with explicit decade ticks
+        ax = plt.gca()
 
+        # Force ticks at actual decades that span the data
+        x_min_exp = int(np.floor(np.log10(box_sizes.min())))
+        x_max_exp = int(np.ceil(np.log10(box_sizes.max())))
+        y_min_exp = int(np.floor(np.log10(box_counts.min())))
+        y_max_exp = int(np.ceil(np.log10(box_counts.max())))
+
+        x_ticks = [10**i for i in range(x_min_exp, x_max_exp + 1)]
+        y_ticks = [10**i for i in range(y_min_exp, y_max_exp + 1)]
+
+        ax.set_xticks(x_ticks)
+        ax.set_yticks(y_ticks)
+        ax.xaxis.set_major_formatter(LogFormatterMathtext())
+        ax.yaxis.set_major_formatter(LogFormatterMathtext())
+        '''
         # Set axis properties
         ax = plt.gca()
-        ax.xaxis.set_major_formatter(FuncFormatter(scientific_formatter))
-        ax.yaxis.set_major_formatter(FuncFormatter(scientific_formatter))
+
+        # Use LogLocator for better automatic tick spacing
+        from matplotlib.ticker import LogLocator, LogFormatterMathtext
+        ax.xaxis.set_major_locator(LogLocator(base=10, numticks=6))
+        ax.xaxis.set_minor_locator(LogLocator(base=10, subs='auto', numticks=12))
+        ax.yaxis.set_major_locator(LogLocator(base=10, numticks=6))
+        ax.yaxis.set_minor_locator(LogLocator(base=10, subs='auto', numticks=12))
+
+        # Use math text formatter for clean scientific notation
+        ax.xaxis.set_major_formatter(LogFormatterMathtext())
+        ax.yaxis.set_major_formatter(LogFormatterMathtext())
+        '''
 
         if not self.no_titles:
             plt.title('Box Counting: ln(N) vs ln(1/r)')
@@ -1853,6 +1883,7 @@ class FractalAnalyzer:
     def _plot_linear_region_analysis(self, windows, dimensions, errors, r_squared,
                                    optimal_window, optimal_dimension, theoretical_dimension,
                                    log_sizes, log_counts, optimal_start, optimal_end, fractal_type=None):
+
         """Plot linear region analysis results."""
         plt.figure(figsize=(15, 12))
 
@@ -1889,37 +1920,62 @@ class FractalAnalyzer:
 
         # Plot 3: ln-ln plot with optimal window highlighted
         plt.subplot(3, 1, 3)
-        plt.scatter(log_sizes, log_counts, label='All Data Points')
-        plt.scatter(log_sizes[optimal_start:optimal_end], log_counts[optimal_start:optimal_end],
-                   color='red', label=f'Optimal Window (D={optimal_dimension:.6f})')
+
+        # Convert back to original scale for proper log-log plotting
+        box_sizes = np.exp(log_sizes) 
+        box_counts = np.exp(log_counts)
+
+        plt.loglog(box_sizes, box_counts, 'bo', label='All Data Points')
+        plt.loglog(box_sizes[optimal_start:optimal_end], box_counts[optimal_start:optimal_end],
+                   'ro', label=f'Optimal Window (D={optimal_dimension:.6f})')
 
         # Add regression line for optimal window
-        opt_slope, opt_intercept, _, _, _ = stats.linregress(
-            log_sizes[optimal_start:optimal_end], log_counts[optimal_start:optimal_end])
-        opt_line = opt_intercept + opt_slope * log_sizes
-        plt.plot(log_sizes, opt_line, 'r--', label=f'Optimal Fit (slope={-opt_slope:.6f})')
+        opt_slope = -optimal_dimension
+        opt_line = optimal_intercept + opt_slope * log_sizes
+        fit_counts = np.exp(opt_line)
+        plt.loglog(box_sizes, fit_counts, 'r--', label=f'Optimal Fit (slope={-opt_slope:.6f})')
 
-        plt.xlabel('ln(Box Size)')
-        plt.ylabel('ln(Box Count)')
+        plt.xlabel('Box Size (r)')
+        plt.ylabel('Number of Boxes (N)')
         if not self.no_titles:
-            plt.title('ln-ln Plot with Optimal Scaling Region')
+            plt.title('Box Counting: ln(N) vs ln(1/r)')
 
-        # Adjust axis limits to ensure all data points are visible
-        x_margin = (log_sizes.max() - log_sizes.min()) * 0.05
-        y_margin = (log_counts.max() - log_counts.min()) * 0.05
-        plt.xlim(log_sizes.min() - x_margin, log_sizes.max() + x_margin)
-        plt.ylim(log_counts.min() - y_margin, log_counts.max() + y_margin)
+        # Now the LogLocator will work properly
+        ax = plt.gca()
+        ax.xaxis.set_major_locator(LogLocator(base=10, numticks=6))
+        ax.xaxis.set_minor_locator(LogLocator(base=10, subs='auto', numticks=12))
+        ax.yaxis.set_major_locator(LogLocator(base=10, numticks=6))
+        ax.yaxis.set_minor_locator(LogLocator(base=10, subs='auto', numticks=12))
+        ax.xaxis.set_major_formatter(LogFormatterMathtext())
+        ax.yaxis.set_major_formatter(LogFormatterMathtext())
+
+        # Adjust axis limits for log scale (use multiplicative margins)
+        '''
+        x_range_factor = (box_sizes.max() / box_sizes.min()) ** 0.05  # 5% margin in log space
+        y_range_factor = (box_counts.max() / box_counts.min()) ** 0.05  # 5% margin in log space
+        plt.xlim(box_sizes.min() / x_range_factor, box_sizes.max() * x_range_factor)
+        plt.ylim(box_counts.min() / y_range_factor, box_counts.max() * y_range_factor)
+        '''
+        
+        # Adjust axis limits to span full decades
+        x_min_decade = 10 ** np.floor(np.log10(box_sizes.min()))
+        x_max_decade = 10 ** np.ceil(np.log10(box_sizes.max()))
+        y_min_decade = 10 ** np.floor(np.log10(box_counts.min()))
+        y_max_decade = 10 ** np.ceil(np.log10(box_counts.max()))
+
+        plt.xlim(x_min_decade, x_max_decade)
+        plt.ylim(y_min_decade, y_max_decade) 
 
         plt.grid(True, linestyle='--', alpha=0.7)
         plt.legend()
 
         plt.tight_layout()
 
-        # Use fractal type in filename if provided
+        # Generate filename
         filename = 'linear_region_analysis'
         if fractal_type:
             filename = f'{fractal_type}_linear_region_analysis'
-        
+
         self._save_plot(filename)
         plt.close()
 
@@ -2013,6 +2069,7 @@ class FractalAnalyzer:
     def _plot_loglog_with_region(self, log_sizes, log_counts, optimal_start, optimal_end,
                                optimal_dimension, error, fractal_type=None):
         """Plot log-log analysis with optimal scaling region highlighted."""
+
         plt.figure(figsize=(10, 8))
 
         # Convert back to regular sizes for plotting
@@ -2053,8 +2110,24 @@ class FractalAnalyzer:
 
         # Set axis properties
         ax = plt.gca()
-        ax.xaxis.set_major_formatter(FuncFormatter(scientific_formatter))
-        ax.yaxis.set_major_formatter(FuncFormatter(scientific_formatter))
+
+        # Use LogLocator for better automatic tick spacing
+        # Force ticks at actual decades that span the data
+        x_min_exp = int(np.floor(np.log10(box_sizes.min())))
+        x_max_exp = int(np.ceil(np.log10(box_sizes.max())))
+        y_min_exp = int(np.floor(np.log10(box_counts.min())))
+        y_max_exp = int(np.ceil(np.log10(box_counts.max())))
+
+        x_ticks = [10**i for i in range(x_min_exp, x_max_exp + 1)]
+        y_ticks = [10**i for i in range(y_min_exp, y_max_exp + 1)]
+
+        ax.set_xticks(x_ticks)
+        ax.set_yticks(y_ticks)
+        ax.xaxis.set_major_formatter(LogFormatterMathtext())
+        ax.yaxis.set_major_formatter(LogFormatterMathtext())
+
+        print(f"X ticks at: {x_ticks}")
+        print(f"Y ticks at: {y_ticks}")
 
         plt.xlabel('Box Size (r)')
         plt.ylabel('Number of Boxes (N)')
